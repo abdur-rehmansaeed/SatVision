@@ -120,6 +120,7 @@ const App = () => {
     latest_source: "", previous_source: "",
     latest_rgb: null, previous_rgb: null
   });
+  const [reportData, setReportData] = useState(null);
 
   // UI toggles
   const [showCurrentWater, setShowCurrentWater] = useState(true);
@@ -238,6 +239,7 @@ const App = () => {
     setProgress(0);
     setStatusLog("Connecting to analysis server...");
     setLayers({ latest: null, previous: null, flood: null });
+    setReportData(null);
 
     const currentBounds = mapBounds;
     const controller = new AbortController();
@@ -282,6 +284,10 @@ const App = () => {
             if (data.progress !== undefined) setProgress(data.progress);
             if (data.log) setStatusLog(data.log);
             if (data.error) throw new Error(data.error);
+
+            if (data.report) {
+              setReportData(data.report);
+            }
 
             if (data.result) {
               setOverlayBounds(currentBounds);
@@ -333,7 +339,8 @@ const App = () => {
         {isMobile && sidebarOpen && (
           <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 2999 }} onClick={() => setSidebarOpen(false)} />
         )}
-
+        
+        
         {/* Sidebar */}
         <div style={{ 
           width: isMobile ? '280px' : '320px', 
@@ -345,18 +352,49 @@ const App = () => {
           boxShadow: isMobile && sidebarOpen ? '4px 0 15px rgba(0,0,0,0.5)' : 'none'
         }}>
           <div>
-            <h3 style={{ color: '#e6edf3', borderBottom: '2px solid #20b2aa', paddingBottom: '10px', marginBottom: '15px' }}>Flood Detection History</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[1, 2].map((item) => (
-                <div key={item} style={{ backgroundColor: '#21262d', padding: '12px', borderRadius: '8px', border: '1px solid #30363d', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <div style={{ backgroundColor: '#0d1117', color: '#20b2aa', padding: '6px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>Map {item}</div>
-                  <div>
-                    <div style={{ color: '#e6edf3', fontSize: '13px', fontWeight: '500' }}>Location Placeholder</div>
-                    <div style={{ color: '#8b949e', fontSize: '11px', marginTop: '4px' }}>YYYY-MM-DD</div>
+            <h3 style={{ color: '#e6edf3', borderBottom: '2px solid #20b2aa', paddingBottom: '10px', marginBottom: '15px' }}>AI Assessment</h3>
+            
+            {reportData ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {/* Metrics Box */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ backgroundColor: '#21262d', padding: '12px', borderRadius: '8px', border: '1px solid #30363d', textAlign: 'center' }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px' }}>New Flooded Area</div>
+                    <div style={{ color: '#ff4d4f', fontSize: '16px', fontWeight: 'bold' }}>
+                      {reportData.metrics?.flood_sq_km?.toFixed(2) || '0.00'} km²
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#21262d', padding: '12px', borderRadius: '8px', border: '1px solid #30363d', textAlign: 'center' }}>
+                    <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px' }}>Current Total Water</div>
+                    <div style={{ color: '#1890ff', fontSize: '16px', fontWeight: 'bold' }}>
+                      {reportData.metrics?.current_sq_km?.toFixed(2) || '0.00'} km²
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                {/* LLM Text Report */}
+                <div style={{ color: '#c9d1d9', fontSize: '13px', lineHeight: '1.6', whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', padding: '15px', backgroundColor: '#21262d', borderRadius: '8px', border: '1px solid #30363d' }}>
+                  {reportData.text}
+                </div>
+
+                {/* Download Button */}
+                <a 
+                  href={reportData.download_url}
+                  download="SatVision_Flood_Report.md"
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '14px', fontWeight: '600', display: 'block', transition: 'opacity 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = 0.8}
+                  onMouseLeave={e => e.currentTarget.style.opacity = 1}
+                >
+                  📥 Download Full Report
+                </a>
+              </div>
+            ) : (
+              <div style={{ backgroundColor: '#21262d', padding: '20px', borderRadius: '8px', border: '1px dashed #30363d', color: '#8b949e', fontSize: '13px', textAlign: 'center', lineHeight: '1.5' }}>
+                🤖 Run an area analysis to generate an AI assessment report and metrics.
+              </div>
+            )}
           </div>
         </div>
 
