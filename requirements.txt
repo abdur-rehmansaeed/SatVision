@@ -1,0 +1,15 @@
+Flask==3.0.3
+flask-cors==4.0.1
+numpy==1.26.4
+tifffile==2024.2.12
+opencv-python-headless==4.9.0.80
+torch==2.2.1+cpu
+torchvision==0.17.1+cpu
+torchaudio==2.2.1+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+pytorch-lightning==2.2.1
+segmentation-models-pytorch==0.3.3
+earthengine-api==0.1.396
+requests==2.31.0
+six
+huggingface_hub==1.4.0
