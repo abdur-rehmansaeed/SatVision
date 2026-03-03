@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 from flask import Flask, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 import math
-from huggingface_hub import InferenceClient
+import google.generativeai as genai
+from PIL import Image
 
 app = Flask(__name__)
 CORS(app)
@@ -348,45 +349,48 @@ def fetch_dynamic_world_baseline(coords, time_interval, filename_prefix):
         print(f"❌ Dynamic World Error {filename_prefix}: {e}", flush=True)
         return None, None
     
-# --- 5. LLM REPORT GENERATION ---
-def generate_flood_report(stats, coords, dates):
-    try:
-        hf_token = os.environ.get("HF_TOKEN") 
-        if not hf_token:
-            return "⚠️ AI Report unavailable: Hugging Face Token missing. Please add HF_TOKEN to your space secrets."
+# --- 5. GEMINI 1.5 MULTIMODAL REPORT GENERATION ---  
+def generate_flood_report(stats, coords, dates, image_path):      
+    try:          
+        gemini_api_key = os.environ.get("GEMINI_API_KEY")           
+        if not gemini_api_key:              
+            return "⚠️ AI Report unavailable: GEMINI_API_KEY missing. Please add it to your space secrets."  
 
-        client = InferenceClient(api_key=hf_token)
+        genai.configure(api_key=gemini_api_key)
+        # We use Gemini 1.5 Flash as it is extremely fast and natively multimodal
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        prompt = f"""
-        You are an expert hydrologist and disaster response analyst. 
-        Write a concise, professional flood assessment report based on the following satellite data.
+        # Load the image we just created so Gemini can see it
+        img = Image.open(image_path)
         
-        Location Bounding Box: {coords}
-        Analysis Period: {dates['baseline']} to {dates['latest']}
-        
-        Key Metrics:
-        - Pre-flood Water Area: {stats['baseline_sq_km']:.2f} sq km
-        - Current Total Water Area: {stats['current_sq_km']:.2f} sq km
-        - New Flooded Area: {stats['flood_sq_km']:.2f} sq km
-        
-        Structure the report with the following headers:
-        1. Executive Summary
-        2. Impact Assessment
-        3. Recommendations for Responders
-        
-        Keep it factual, professional, and under 300 words. Do not make up external data.
-        """
+        prompt = f"""          
+        You are an expert hydrologist and disaster response analyst.           
+        I have provided an image overlay of the flooded region (red areas indicate new flooding) along with calculated data.  
 
-        messages = [{"role": "user", "content": prompt}]
-        
-        response = client.chat_completion(
-            model="meta-llama/Meta-Llama-3-8B-Instruct", 
-            messages=messages,
-            max_tokens=400
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"❌ LLM Error: {e}", flush=True)
+        Location Bounding Box: {coords}          
+        Analysis Period: {dates['baseline']} to {dates['latest']}  
+
+        Key Metrics:          
+        - Pre-flood Water Area: {stats['baseline_sq_km']:.2f} sq km          
+        - Current Total Water Area: {stats['current_sq_km']:.2f} sq km          
+        - New Flooded Area: {stats['flood_sq_km']:.2f} sq km  
+
+        Look closely at the provided flood map image and the metrics above. 
+        Write a concise, professional flood assessment report.  
+
+        Structure the report with the following headers:          
+        1. Executive Summary          
+        2. Visual & Impact Assessment (Discuss the distribution of the red flooded areas you see in the image)          
+        3. Recommendations for Responders  
+
+        Keep it factual, professional, and under 300 words. Do not make up external data.          
+        """  
+
+        # Pass BOTH the prompt and the image to Gemini
+        response = model.generate_content([prompt, img])          
+        return response.text      
+    except Exception as e:          
+        print(f"❌ Gemini Error: {e}", flush=True)          
         return "⚠️ AI Report generation failed due to server error."
 
 @app.route('/api/detect_stream', methods=['POST'])
@@ -428,36 +432,48 @@ def detect_stream():
         if mask_latest.shape != mask_pre.shape:
              mask_pre = cv2.resize(mask_pre, (mask_latest.shape[1], mask_latest.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-        flood_mask = cv2.bitwise_and(mask_latest, cv2.bitwise_not(mask_pre))
-
-        # --- CALCULATE METRICS & GENERATE REPORT ---
-        yield json.dumps({"progress": 92, "log": "📊 Calculating Spatial Metrics..."}) + "\n"
+        flood_mask = cv2.bitwise_and(mask_latest, cv2.bitwise_not(mask_pre))  
         
-        pixel_to_sq_km = 100 / 1_000_000
-        stats = {
-            "baseline_sq_km": np.count_nonzero(mask_pre == 255) * pixel_to_sq_km,
-            "current_sq_km": np.count_nonzero(mask_latest == 255) * pixel_to_sq_km,
-            "flood_sq_km": np.count_nonzero(flood_mask == 255) * pixel_to_sq_km,
-        }
-        dates = {"baseline": date_pre, "latest": date_latest}
-
-        yield json.dumps({"progress": 95, "log": "🤖 Generating AI Assessment Report..."}) + "\n"
+        base_url = request.host_url.rstrip('/')  
         
-        ai_report_text = generate_flood_report(stats, coords, dates)
-        report_filename = "flood_assessment_report.md"
-        report_path = os.path.join(DOWNLOADS_DIR, report_filename)
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(f"# SatVision Flood Assessment Report\n\n{ai_report_text}")
-        # -------------------------------------------
+        # 1. CREATE IMAGES FIRST (So Gemini can see them)
+        yield json.dumps({"progress": 91, "log": "🎨 Generating Visual Overlays..."}) + "\n"
+        url_latest = create_overlay_png(mask_latest, [255, 0, 0], "overlay_latest.png")          
+        url_pre = create_overlay_png(mask_pre, [255, 255, 0], "overlay_previous.png")          
+        url_flood = create_overlay_png(flood_mask, [0, 0, 255], "overlay_flood.png")  
+        rgb_latest = create_rgb_preview(path_latest, "rgb_latest.jpg")          
+        rgb_pre = create_rgb_preview(path_pre, "rgb_previous.jpg")  
 
-        url_latest = create_overlay_png(mask_latest, [255, 0, 0], "overlay_latest.png")
-        url_pre = create_overlay_png(mask_pre, [255, 255, 0], "overlay_previous.png")
-        url_flood = create_overlay_png(flood_mask, [0, 0, 255], "overlay_flood.png")
+        # 2. CALCULATE METRICS        
+        yield json.dumps({"progress": 92, "log": "📊 Calculating Spatial Metrics..."}) + "\n"  
+        pixel_to_sq_km = 100 / 1_000_000          
+        stats = {              
+            "baseline_sq_km": np.count_nonzero(mask_pre == 255) * pixel_to_sq_km,              
+            "current_sq_km": np.count_nonzero(mask_latest == 255) * pixel_to_sq_km,              
+            "flood_sq_km": np.count_nonzero(flood_mask == 255) * pixel_to_sq_km,          
+        }          
+        dates = {"baseline": date_pre, "latest": date_latest}  
+
+        # 3. GENERATE GEMINI REPORT WITH IMAGE
+        yield json.dumps({"progress": 95, "log": "🤖 Generating AI Assessment Report..."}) + "\n"  
         
-        rgb_latest = create_rgb_preview(path_latest, "rgb_latest.jpg")
-        rgb_pre = create_rgb_preview(path_pre, "rgb_previous.jpg")
-
-        base_url = request.host_url.rstrip('/')
+        # Get the path to the red flood map we just created
+        flood_image_path = os.path.join(DOWNLOADS_DIR, "overlay_flood.png")
+        
+        # Pass the image path to our new Gemini function
+        ai_report_text = generate_flood_report(stats, coords, dates, flood_image_path)          
+        
+        # 4. SAVE THE REPORT (With the image injected into the markdown!)
+        unique_id = int(datetime.now().timestamp())
+        report_filename = f"flood_assessment_report_{unique_id}.md"          
+        report_path = os.path.join(DOWNLOADS_DIR, report_filename)          
+        
+        markdown_content = f"# SatVision Flood Assessment Report\n\n"
+        markdown_content += f"![Flood Map]({base_url}/mask/{url_flood})\n\n"
+        markdown_content += ai_report_text
+        
+        with open(report_path, "w", encoding="utf-8") as f:              
+            f.write(markdown_content)
         
         yield json.dumps({
             "progress": 100,
