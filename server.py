@@ -530,7 +530,9 @@ def detect_stream():
 
 @app.route('/mask/<filename>')
 def serve_mask(filename):
-    return send_from_directory(DOWNLOADS_DIR, filename)
+    # Force the browser to download the file instead of opening it, but only for PDFs
+    is_pdf = filename.endswith('.pdf')
+    return send_from_directory(DOWNLOADS_DIR, filename, as_attachment=is_pdf)
 
 if __name__ == '__main__':
     print("🚀 Flood Backend Running...", flush=True)

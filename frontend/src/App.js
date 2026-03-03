@@ -174,6 +174,24 @@ const App = () => {
     setIsDragging(false);
     e.target.releasePointerCapture(e.pointerId);
   };
+  // ── Secure Downloader ───────────────────────────────
+  const handleSecureDownload = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Download failed, opening in new tab...", error);
+      window.open(url, '_blank');
+    }
+  };
 
   // ── Search logic ──────────────────────────────────────
   const fetchSuggestions = async (query) => {
@@ -378,17 +396,14 @@ const App = () => {
                 </div>
 
                 {/* Download Button */}
-                <a 
-                  href={reportData.download_url}
-                  download="SatVision_Flood_Report.pdf"
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '14px', fontWeight: '600', display: 'block', transition: 'opacity 0.2s' }}
+                <button 
+                  onClick={() => handleSecureDownload(reportData.download_url, "SatVision_Flood_Report.pdf")}
+                  style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: '14px', fontWeight: '600', display: 'block', width: '100%', transition: 'opacity 0.2s' }}
                   onMouseEnter={e => e.currentTarget.style.opacity = 0.8}
                   onMouseLeave={e => e.currentTarget.style.opacity = 1}
                 >
                   📥 Download Full Report
-                </a>
+                </button>
               </div>
             ) : (
               <div style={{ backgroundColor: '#21262d', padding: '20px', borderRadius: '8px', border: '1px dashed #30363d', color: '#8b949e', fontSize: '13px', textAlign: 'center', lineHeight: '1.5' }}>
