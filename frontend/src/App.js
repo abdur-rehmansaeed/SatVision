@@ -174,24 +174,7 @@ const App = () => {
     setIsDragging(false);
     e.target.releasePointerCapture(e.pointerId);
   };
-  // ── Secure Downloader ───────────────────────────────
-  const handleSecureDownload = async (url, filename) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      console.error("Download failed, opening in new tab...", error);
-      window.open(url, '_blank');
-    }
-  };
+
 
   // ── Search logic ──────────────────────────────────────
   const fetchSuggestions = async (query) => {
