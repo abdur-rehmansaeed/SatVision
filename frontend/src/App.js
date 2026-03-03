@@ -396,14 +396,15 @@ const App = () => {
                 </div>
 
                 {/* Download Button */}
-                <button 
-                  onClick={() => handleSecureDownload(reportData.download_url, "SatVision_Flood_Report.pdf")}
-                  style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'center', fontSize: '14px', fontWeight: '600', display: 'block', width: '100%', transition: 'opacity 0.2s' }}
+                <a 
+                  href={`${reportData.download_url}?t=${Date.now()}`}
+                  download="SatVision_Flood_Report.pdf"
+                  style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '14px', fontWeight: '600', display: 'block', transition: 'opacity 0.2s' }}
                   onMouseEnter={e => e.currentTarget.style.opacity = 0.8}
                   onMouseLeave={e => e.currentTarget.style.opacity = 1}
                 >
                   📥 Download Full Report
-                </button>
+                </a>
               </div>
             ) : (
               <div style={{ backgroundColor: '#21262d', padding: '20px', borderRadius: '8px', border: '1px dashed #30363d', color: '#8b949e', fontSize: '13px', textAlign: 'center', lineHeight: '1.5' }}>
