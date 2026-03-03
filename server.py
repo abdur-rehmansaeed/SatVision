@@ -12,8 +12,9 @@ from datetime import datetime, timedelta
 from flask import Flask, request, Response, stream_with_context, send_from_directory
 from flask_cors import CORS
 import math
-import google.generativeai as genai
+from google import genai
 from PIL import Image
+from fpdf import FPDF
 
 app = Flask(__name__)
 CORS(app)
@@ -349,16 +350,15 @@ def fetch_dynamic_world_baseline(coords, time_interval, filename_prefix):
         print(f"❌ Dynamic World Error {filename_prefix}: {e}", flush=True)
         return None, None
     
-# --- 5. GEMINI 1.5 MULTIMODAL REPORT GENERATION ---  
+# --- 5. GEMINI MULTIMODAL REPORT GENERATION ---  
 def generate_flood_report(stats, coords, dates, image_path):      
     try:          
         gemini_api_key = os.environ.get("GEMINI_API_KEY")           
         if not gemini_api_key:              
             return "⚠️ AI Report unavailable: GEMINI_API_KEY missing. Please add it to your space secrets."  
 
-        genai.configure(api_key=gemini_api_key)
-        # We use Gemini 1.5 Flash as it is extremely fast and natively multimodal
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Initialize the modern Gemini Client
+        client = genai.Client(api_key=gemini_api_key)
         
         # Load the image we just created so Gemini can see it
         img = Image.open(image_path)
@@ -386,8 +386,11 @@ def generate_flood_report(stats, coords, dates, image_path):
         Keep it factual, professional, and under 300 words. Do not make up external data.          
         """  
 
-        # Pass BOTH the prompt and the image to Gemini
-        response = model.generate_content([prompt, img])          
+        # Pass BOTH the image and prompt using the updated v2.5 Flash model
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[img, prompt]
+        )          
         return response.text      
     except Exception as e:          
         print(f"❌ Gemini Error: {e}", flush=True)          
@@ -463,17 +466,42 @@ def detect_stream():
         # Pass the image path to our new Gemini function
         ai_report_text = generate_flood_report(stats, coords, dates, flood_image_path)          
         
-        # 4. SAVE THE REPORT (With the image injected into the markdown!)
+# 4. SAVE THE REPORT (AS A FORMATTED PDF)
+        yield json.dumps({"progress": 98, "log": "📄 Compiling PDF Report..."}) + "\n"
+        
         unique_id = int(datetime.now().timestamp())
-        report_filename = f"flood_assessment_report_{unique_id}.md"          
-        report_path = os.path.join(DOWNLOADS_DIR, report_filename)          
+        report_filename = f"flood_assessment_report_{unique_id}.pdf"          
+        report_path = os.path.join(DOWNLOADS_DIR, report_filename)  
+
+        # Create a beautiful composite image for the PDF (Actual Satellite + Red Flood overlay)
+        pdf_img_path = os.path.join(DOWNLOADS_DIR, f"pdf_img_{unique_id}.jpg")
+        base_img = cv2.imread(os.path.join(DOWNLOADS_DIR, "rgb_latest.jpg"))
         
-        markdown_content = f"# SatVision Flood Assessment Report\n\n"
-        markdown_content += f"![Flood Map]({base_url}/mask/{url_flood})\n\n"
-        markdown_content += ai_report_text
+        if base_img is not None:
+            pdf_img = base_img.copy()
+            pdf_img[flood_mask == 255] = (0, 0, 255) # Add bright red pixels for the flood
+            cv2.imwrite(pdf_img_path, pdf_img)
+        else:
+            pdf_img_path = flood_image_path # Fallback
+
+        # Draw the PDF
+        pdf = FPDF()
+        pdf.add_page()
         
-        with open(report_path, "w", encoding="utf-8") as f:              
-            f.write(markdown_content)
+        # Add Title
+        pdf.set_font("helvetica", "B", 18)
+        pdf.cell(0, 15, "SatVision Flood Assessment Report", align="C", ln=True)
+        pdf.ln(5)
+        
+        # Add the Image
+        pdf.image(pdf_img_path, x=15, w=180)
+        pdf.ln(10)
+        
+        # Add the Text (fpdf2's markdown=True automatically bolds Gemini's headers!)
+        pdf.set_font("helvetica", size=11)
+        pdf.multi_cell(0, 6, text=ai_report_text, markdown=True)
+        
+        pdf.output(report_path)
         
         yield json.dumps({
             "progress": 100,

@@ -380,7 +380,7 @@ const App = () => {
                 {/* Download Button */}
                 <a 
                   href={reportData.download_url}
-                  download="SatVision_Flood_Report.md"
+                  download="SatVision_Flood_Report.pdf"
                   target="_blank" 
                   rel="noopener noreferrer"
                   style={{ backgroundColor: '#20b2aa', color: '#0d1117', padding: '12px', borderRadius: '8px', textAlign: 'center', textDecoration: 'none', fontSize: '14px', fontWeight: '600', display: 'block', transition: 'opacity 0.2s' }}
