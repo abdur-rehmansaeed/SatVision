@@ -16,7 +16,7 @@ const DEFAULT_ZOOM = 13.5;
 // Update this to your actual HuggingFace or deployment URL if different
 const BACKEND_URL = 'https://satvision-app.hf.space'; 
 
-// Helper to ensure download URLs always point to the public domain, bypassing internal proxy IPs
+// Helper to ensure download URLs always point to the public domain
 const getSafeDownloadUrl = (url) => {
   if (!url) return "#";
   const parts = url.split('/');
@@ -25,7 +25,7 @@ const getSafeDownloadUrl = (url) => {
 };
 
 // ────────────────────────────────────────────────
-// Featured Flood Events Data (10m Zoom Anchors)
+// Featured Flood Events Data
 // ────────────────────────────────────────────────
 const FEATURED_EVENTS = [
   { label: "Custom Date / Live Search", value: "custom" },
@@ -70,24 +70,85 @@ const ImageModal = ({ url, date, title, source, onClose }) => {
           <button
             onClick={onClose}
             style={{ border: 'none', background: '#21262d', color: '#c9d1d9', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px' }}
-          >
-            ✕
-          </button>
+          >✕</button>
         </div>
-
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', borderRadius: '8px' }}>
-          <img
-            src={freshUrl}
-            alt="Satellite Source"
-            style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }}
-            onError={() => console.error('Image failed to load:', freshUrl)}
-          />
+          <img src={freshUrl} alt="Satellite Source" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} onError={() => console.error('Image failed to load:', freshUrl)} />
         </div>
-
-        <div style={{ fontSize: '12px', color: '#8b949e', textAlign: 'center' }}>
-          Source: {source || "Sentinel-2"}
-        </div>
+        <div style={{ fontSize: '12px', color: '#8b949e', textAlign: 'center' }}>Source: {source || "Sentinel-2"}</div>
       </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────
+// User Feedback Component
+// ────────────────────────────────────────────────
+const GenerationFeedback = ({ sessionId }) => {
+  const [feedbackText, setFeedbackText] = useState('');
+  const [rating, setRating] = useState('positive');
+  const [status, setStatus] = useState('idle');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+    setStatus('submitting');
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, feedback_text: feedbackText, rating }),
+      });
+
+      if (response.ok) {
+        setStatus('success');
+        setFeedbackText('');
+      } else {
+        setStatus('error');
+      }
+    } catch (error) {
+      console.error("Feedback submission failed:", error);
+      setStatus('error');
+    }
+  };
+
+  if (!sessionId) return null;
+
+  if (status === 'success') {
+    return (
+      <div style={{ marginTop: '10px', padding: '10px', backgroundColor: 'rgba(35, 134, 54, 0.1)', border: '1px solid #3fb950', borderRadius: '6px', color: '#3fb950', fontSize: '12px', textAlign: 'center' }}>
+        Thank you! Your feedback has been recorded.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '10px', padding: '12px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px' }}>
+      <h4 style={{ margin: '0 0 8px 0', color: '#e6edf3', fontSize: '13px' }}>Model Performance Feedback</h4>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '15px' }}>
+          <label style={{ color: '#c9d1d9', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input type="radio" value="positive" checked={rating === 'positive'} onChange={(e) => setRating(e.target.value)} /> 👍 Accurate
+          </label>
+          <label style={{ color: '#c9d1d9', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <input type="radio" value="negative" checked={rating === 'negative'} onChange={(e) => setRating(e.target.value)} /> 👎 Needs Fix
+          </label>
+        </div>
+        <textarea
+          style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', fontSize: '12px', outline: 'none', resize: 'vertical', minHeight: '50px', boxSizing: 'border-box' }}
+          placeholder="Anonymous feedback (e.g., misclassified shadows...)"
+          value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)}
+          disabled={status === 'submitting'}
+        />
+        <button
+          type="submit" disabled={status === 'submitting' || !feedbackText.trim()}
+          style={{ alignSelf: 'flex-end', backgroundColor: '#20b2aa', color: '#0d1117', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: status === 'submitting' || !feedbackText.trim() ? 'not-allowed' : 'pointer', opacity: status === 'submitting' || !feedbackText.trim() ? 0.5 : 1 }}
+        >
+          {status === 'submitting' ? 'Sending...' : 'Submit Feedback'}
+        </button>
+        {status === 'error' && <span style={{ color: '#ff7b72', fontSize: '11px' }}>Submission failed. Please try again.</span>}
+      </form>
     </div>
   );
 };
@@ -235,7 +296,7 @@ const App = () => {
         setTargetLocation([ev.lat, ev.lon]);
         setTargetDate(ev.date);
         setMapZoom(ev.zoom);
-        setSearchQuery(""); 
+        searchQuery && setSearchQuery(""); 
       }
     }
   };
@@ -263,6 +324,7 @@ const App = () => {
 
     let finalLayers = null;
     let finalMeta = null;
+    let finalSessionId = null; // Store session ID directly here
 
     try {
       const bbox = {
@@ -297,6 +359,9 @@ const App = () => {
             if (data.log) setStatusLog(data.log);
             if (data.error) throw new Error(data.error);
 
+            // Capture the session ID when the stream sends it
+            if (data.session_id) finalSessionId = data.session_id;
+
             if (data.result) {
               finalLayers = { latest: data.result.latest, previous: data.result.previous, flood: data.result.flood };
               finalMeta = { ...data.meta, report: data.report };
@@ -320,9 +385,11 @@ const App = () => {
               locName = `Lat: ${centerLoc[0].toFixed(2)}, Lon: ${centerLoc[1].toFixed(2)}`;
           }
 
+          // Push the session ID into the history array
           const newHistoryItem = {
               id: Date.now(), name: locName, date: targetDate || new Date().toISOString().split('T')[0],
-              bounds: currentBounds, targetLocation: centerLoc, zoom: currentZoom, layers: finalLayers, meta: finalMeta
+              bounds: currentBounds, targetLocation: centerLoc, zoom: currentZoom, layers: finalLayers, meta: finalMeta,
+              sessionId: finalSessionId 
           };
           setHistory(prev => [newHistoryItem, ...prev]);
           setExpandedHistoryId(newHistoryItem.id); 
@@ -396,6 +463,13 @@ const App = () => {
                       {expandedHistoryId === item.id && item.meta?.report?.text && (
                           <div style={{ marginTop: '8px', padding: '10px', backgroundColor: '#0d1117', borderRadius: '6px', border: '1px solid #30363d', color: '#c9d1d9', fontSize: '12px', lineHeight: '1.6', maxHeight: '250px', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
                               {item.meta.report.text}
+                          </div>
+                      )}
+
+                      {/* FEEDBACK COMPONENT RENDERED HERE */}
+                      {expandedHistoryId === item.id && item.sessionId && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                              <GenerationFeedback sessionId={item.sessionId} />
                           </div>
                       )}
                     </div>
